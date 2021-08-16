@@ -1,0 +1,93 @@
+pipeline {
+    agent any
+
+    environment {
+        FailedModules = "构建失败的模块有: "
+    }
+
+    stages {
+        stage('download') { 
+            steps {
+                script{
+                    println "this is download code step"
+                    sh "sleep 2"
+                    println "download successful"
+                }
+            }
+        }
+
+        stage('build') {
+            steps {
+                script{
+                    def AllModules = [ 'mcvs', 'mccs', 'mcsc', 'abc', 'bcd', 'efg', 'hij', 'lmn', 'opq' ]
+                    def BuildAllModules = [:]
+                    def BuildFailedModules = []
+                    def ArchiveFaildModules = []
+
+                    for ( x in AllModules){
+                        def module = x
+                        println "###########${module}#############"
+                        BuildAllModules["${module}"] = {
+                            println "start ${module} build.."
+
+                            def flag1 = true
+                            def flag2 = true
+                            
+                            try {
+                                sleep 3
+                                if ( "${module}" == "mccs" ){
+                                    // 假设  mccs build 失败
+                                    sh "exit 1"
+                                }
+                            }
+                            catch (Exception e){
+                                println "${e} \n${module} build failed. please build it by itself."
+                                BuildFailedModules.add("${module}")
+                                FailedModules += "${module} "
+                                flag1 = false
+                            }
+                            finally {
+                                if ( flag1 == true ){
+                                    try {
+                                        println "this is archive step"                                   
+                                        if ( "${module}" == "mcsc" ){
+                                            // 模拟 mscs archive 失败
+                                            sh "exit 2"
+                                        }                                   
+                                    }
+                                    catch (Exception e){
+                                        println "${e} \n${module} archive failed. please contact CM to deal with it"
+                                        ArchiveFaildModules.add("${module}")
+                                        FailedModules += "${module} "
+                                        flag2 = false
+                                    }      
+                                }else {
+                                    println "skill archive step."
+                                }                  
+                            } 
+                        }          
+                    }
+                    parallel BuildAllModules
+
+                    // tag step
+                    println "start tag step."
+                    for (x in AllModules){
+                        def module = x
+                        if ( ! BuildFailedModules.contains("${module}") && ! ArchiveFaildModules.contains("${module}") ){
+                            println "modify ${module} branch"
+                        }
+                    }
+                    println "this is submit branch step."
+                }
+            }
+        }
+    }
+
+    post { 
+        always { 
+            script{
+                println FailedModules
+            }
+        }
+    }
+}
