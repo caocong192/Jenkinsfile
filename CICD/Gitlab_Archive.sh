@@ -9,7 +9,7 @@
 
 
 function mount_dir(){
-    mount -t cifs -o username=version -o password=123qwe..,vers=3.0 $1 ${MOUNT_PATH}
+    mount -t cifs -o username=version -o password=xxx,vers=3.0 $1 ${MOUNT_PATH}
 }
 
 
