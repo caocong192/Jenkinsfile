@@ -1,0 +1,13 @@
+- hosts: '{{ env_host_ip }}'
+  remote_user: root
+  vars:
+    - package_name: '{{ env_package_name }}'
+    - moudle_name: '{{ env_moudle_name }}'
+    - dest_package_path: "/mds6800/packages/"
+  tasks:
+    - name: excute hostname command
+      shell: hostname
+    - name: copy install packages to server
+      copy: src=./packages/{{ package_name }} dest={{ dest_package_path }}
+    - name: install moudle
+      shell: cd {{ dest_package_path }}; chmod +x {{ package_name }}; ./{{ package_name }}
