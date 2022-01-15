@@ -6,6 +6,7 @@
 def tools = new org.devops.tools()
 def download = new org.devops.download()
 def pclint = new org.devops.pclint()
+def projectEnv = new org.devops.projectEnv()
 def build = new org.devops.build()
 def controlVersion = new org.devops.controlVersion()
 def archive = new org.devops.archive()
@@ -14,10 +15,13 @@ def toEmail = new org.devops.toEmail()
 def deploy = new org.devops.deploy()
 
 // env from shareibrary
-env.ProductName = environment.GetProductName() // 产品名
 env.ProjectVersion = environment.GetProjectVersion() // 项目版本名
+env.ProductName = environment.GetProductName() // 产品名
 env.MoudleName = environment.GetMoudleName() // 模块名
+
+projectInfos.BackendSericeEnv() // 获取项目配置信息
 env.RepoURL = environment.TFSGitServer() + "/" + MoudleName // TFS仓库地址
+env.DeployFaildModulesStr = "--"
 
 
 pipeline {
@@ -35,9 +39,25 @@ pipeline {
 
     parameters {
         choice(name: "BranchName", choices: ["platform_railway_develop/Release1"], description: "请选择所需要构建的分支")
-        choice(name: "CompileMachine", choices: buildMachines(), description: "请选择编译机类型")
         booleanParam(name: "ExecutePclint", defaultValue: false, description: "请选择是否执行Pclint")
-        string(defaultValue: "", name: "DeployIP", trim: true, description: "请输入部署机器IP, 为空跳过部署, 多环境编译跳过部署")
+
+        extendedChoice description: '请勾选要构建的环境', 
+        multiSelectDelimiter: ',', 
+        name: 'CompileMachine', 
+        quoteValue: false, 
+        saveJSONParameterToFile: false, 
+        type: 'PT_CHECKBOX',
+        value: ProjectBuildEnv,
+        visibleItemCount: 6
+
+        extendedChoice description: '请勾选要构建的环境,为空跳过部署', 
+        multiSelectDelimiter: ',', 
+        name: 'CompileMachine', 
+        quoteValue: false, 
+        saveJSONParameterToFile: false, 
+        type: 'PT_CHECKBOX',
+        value: DeployIps,
+        visibleItemCount: 6
     }
     
     stages {
@@ -80,10 +100,10 @@ pipeline {
                 }
             }
             when {
-             beforeAgent true
-                not {
-                 environment name: "CompileMachine", value: "All"
-                }        
+                beforeAgent true
+                expression {
+                    environment.StageExecute()
+                }
             }
             steps {
                 script {
@@ -110,16 +130,14 @@ pipeline {
             }
             when {
                 beforeAgent true
-                not {
-                    environment name: "CompileMachine", value: "All"
+                expression {
+                   environment.StageExecute()
                 }         
             }
             steps{
                 script{
                     tools.PrintMes("开始发布包", "green")
                     archive.ArchivePackage()
-                    
-                    sh("printenv | sort")
                 }
             }
         }
@@ -133,19 +151,19 @@ pipeline {
             }
             when {
                 beforeAgent true
-                not {
-                    environment name: "CompileMachine", value: "All"
-                }         
+                expression {
+                    environment.StageExecute()
+                }        
             }
             steps{
                 script{
                     tools.PrintMes("开始打标签", "green")
-                    tag.TagLinux()
+                    // tag.TagLinux()
 
                     tools.PrintMes("开始增加版本号", "green")
                     environment.DownloadTFSCI()
-                    controlVersion.AddVersion()
-                    controlVersion.SubmitVersion()
+                    // controlVersion.AddVersion()
+                    // controlVersion.SubmitVersion()
                 }
             }
         }
@@ -159,18 +177,18 @@ pipeline {
             }
             when {
                 beforeAgent true
-                allOf {
-                    not {
-                        environment name: "CompileMachine", value: "All"
-                    }
-                    not {
-                        environment name: "DeployIP", value: ""
-                    }         
-                }             
+                expression {
+                    environment.StageExecute()
+                }
+                not {
+                    environment name: "DeployIP", value: ""
+                }         
+                           
             }
             steps{
                 script{
                     tools.PrintMes("开始部署阶段", "green")
+                    environment.DownloadTFSCI()
                     deploy.Deploy()
                 }
             }
@@ -188,11 +206,14 @@ pipeline {
                     }
                     when {
                         beforeAgent true
-                        environment name: 'CompileMachine', value: 'All'         
+                        expression {
+                            environment.StageExecute("Centos_X86")
+                        }        
                     }
                     steps {
                         script {
                             withEnv(["CompileMachine=Centos_X86"]) {
+
                                 tools.PrintMes("开始下载代码","green")
                                 download.DownloadMoudleCode()
                                 download.DownloadInterfaceCode() 
@@ -221,11 +242,14 @@ pipeline {
                     }
                     when {
                         beforeAgent true
-                        environment name: 'CompileMachine', value: 'All'         
+                        expression {
+                            environment.StageExecute("kylin_ft")
+                        }          
                     }
                     steps {
                         script {
                             withEnv(["CompileMachine=kylin_ft"]) {
+
                                 tools.PrintMes("开始下载代码","green")
                                 download.DownloadMoudleCode()
                                 download.DownloadInterfaceCode() 
@@ -253,11 +277,14 @@ pipeline {
                     }
                     when {
                         beforeAgent true
-                        environment name: 'CompileMachine', value: 'All'         
+                        expression {
+                            environment.StageExecute("kylin_x86")
+                        }          
                     }
                     steps {
                         script {
                             withEnv(["CompileMachine=kylin_x86"]) {
+
                                 tools.PrintMes("开始下载代码","green")
                                 download.DownloadMoudleCode()
                                 download.DownloadInterfaceCode()
@@ -276,37 +303,40 @@ pipeline {
                     }
                 }
 
-                stage('neokylin_kunpeng') {
-                    agent { 
-                        node {
-                            label "neokylin_kunpeng"
-                            customWorkspace "/home/Jenkins_Workspace/${ProductName}"
-                        }
-                    }
-                    when {
-                        beforeAgent true
-                        environment name: 'CompileMachine', value: 'All'         
-                    }
-                    steps {
-                        script {
-                            withEnv(["CompileMachine=neokylin_kunpeng"]) {
-                                tools.PrintMes("开始下载代码","green")
-                                download.DownloadMoudleCode()
-                                download.DownloadInterfaceCode()
+                // stage('neokylin_kunpeng') {
+                //     agent { 
+                //         node {
+                //             label "neokylin_kunpeng"
+                //             customWorkspace "/home/Jenkins_Workspace/${ProductName}"
+                //         }
+                //     }
+                    // when {
+                    //     beforeAgent true
+                    //     expression {
+                    //         environment.StageExecute("neokylin_kunpeng")
+                    //     }        
+                    // }
+                //     steps {
+                //         script {
+                //             withEnv(["CompileMachine=neokylin_kunpeng"]) {
 
-                                tools.PrintMes("设置版本号", "green")
-                                environment.DownloadTFSCI() 
-                                controlVersion.SetVersion()
+                //                 tools.PrintMes("开始下载代码","green")
+                //                 download.DownloadMoudleCode()
+                //                 download.DownloadInterfaceCode()
 
-                                tools.PrintMes("开始构建","green")
-                                build.Build()
+                //                 tools.PrintMes("设置版本号", "green")
+                //                 environment.DownloadTFSCI() 
+                //                 controlVersion.SetVersion()
 
-                                tools.PrintMes("开始发布包", "green")
-                                archive.ArchivePackage()
-                            }
-                        }
-                    }
-                }
+                //                 tools.PrintMes("开始构建","green")
+                //                 build.Build()
+
+                //                 tools.PrintMes("开始发布包", "green")
+                //                 archive.ArchivePackage()
+                //             }
+                //         }
+                //     }
+                // }
 
                 stage('RH7_X86') {
                     agent { 
@@ -317,15 +347,18 @@ pipeline {
                     }
                     when {
                         beforeAgent true
-                        environment name: 'CompileMachine', value: 'All'         
+                        expression {
+                            environment.StageExecute("RH7_X86")
+                        }           
                     }
                     steps {
                         script {
                             withEnv(["CompileMachine=RH7_X86"]) {
+
                                 tools.PrintMes("开始下载代码","green")
                                 download.DownloadMoudleCode()
                                 download.DownloadInterfaceCode() 
-
+    
                                 tools.PrintMes("设置版本号", "green")
                                 environment.DownloadTFSCI() 
                                 controlVersion.SetVersion()
@@ -345,23 +378,51 @@ pipeline {
         stage("Parallel_Build Tag and Add_Version") {
             agent { 
                 node {
-                    label "Centos_X86"
+                    label "${MulEnvTagMachine}"
                     customWorkspace "/home/Jenkins_Workspace/${ProductName}"
                 }
             }
             when {
                 beforeAgent true
-                environment name: "CompileMachine", value: "All"      
+                expression {
+                    environment.StageExecute(MulEnvTagMachine)
+                }  
             }
             steps{
                 script{
                     tools.PrintMes("开始打标签", "green")
-                    tag.TagLinux()
+                    // tag.TagLinux()
 
                     tools.PrintMes("开始增加版本号", "green")
                     environment.DownloadTFSCI()
-                    controlVersion.AddVersion()
-                    controlVersion.SubmitVersion()
+                    // controlVersion.AddVersion()
+                    // controlVersion.SubmitVersion()
+                }
+            }
+        }
+
+        stage("Deploy") {
+            agent { 
+                node {
+                    label "ansible"
+                    customWorkspace "/home/Jenkins_Workspace/${ProductName}"
+                }
+            }
+            when {
+                beforeAgent true
+                expression {
+                    environment.StageExecute(MulEnvTagMachine)
+                }
+                not {
+                    environment name: "DeployIP", value: ""
+                }         
+                           
+            }
+            steps{
+                script{
+                    tools.PrintMes("开始部署阶段", "green")
+                    environment.DownloadTFSCI()
+                    deploy.Deploy()
                 }
             }
         }

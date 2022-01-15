@@ -14,11 +14,11 @@ def SvnVersion() {
     return "HEAD"
 }
 
-def GetProductName() {
+def GetProjectVersion() {
     return JOB_NAME.split("_")[0].toLowerCase()
 }
 
-def GetProjectVersion() {
+def GetProductName() {
     return JOB_NAME.split("_")[1].toLowerCase()
 }
 
@@ -31,8 +31,31 @@ def MdsModules(){
     return  AllModulesStr
 }
 
+// 判断当前步骤是否执行
+def StageExecute( String BuildMachineLabel = "," ){
+    // BuildMachineLabel 为 "," 字符进行单环境判断 否则是多环境判断
+    // 不传参数, 默认单环境判断
+    if ( BuildMachineLabel == "," ) {
+        if (CompileMachine.indexOf(BuildMachineLabel) == -1 ) {
+            return true
+        } else {
+            return false
+        }
+    } 
+    // 多环境判断
+    else if (CompileMachine.indexOf(BuildMachineLabel) != -1 ) {
+        env.MulEnvTagMachine = CompileMachine.split(",")[0]    
+        return true
+    } else {
+        return false
+    }
+}
+
 // 需 gbk 编码
 def ArchiveBasePath(){
+    if (BranchName =~ "testing") {
+        return "//192.168.2.77/产品版本测试发布库"
+    }
     return "//192.168.2.77/研发自测版本发布库"
 }
 
